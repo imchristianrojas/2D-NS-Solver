@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -17,16 +18,19 @@ FluidField::FluidField(int size, float diffusion, float viscosity, float dt)
       m_diffusion(diffusion),
       m_viscosity(viscosity),
       m_inflowVelocity(1.75F),
-      m_densityDissipation(0.992F),
+      m_densityDissipation(0.997F),
       m_density(static_cast<std::size_t>(size * size), 0.0F),
       m_densityScratch(static_cast<std::size_t>(size * size), 0.0F),
+      m_pressure(static_cast<std::size_t>(size * size), 0.0F),
       m_velocityX(static_cast<std::size_t>(size * size), 0.0F),
       m_velocityY(static_cast<std::size_t>(size * size), 0.0F),
       m_velocityXScratch(static_cast<std::size_t>(size * size), 0.0F),
-      m_velocityYScratch(static_cast<std::size_t>(size * size), 0.0F) {}
+      m_velocityYScratch(static_cast<std::size_t>(size * size), 0.0F),
+      m_obstacles(static_cast<std::size_t>(size * size), 0U) {}
 
 void FluidField::step() {
     applyInflow();
+    enforceObstacles();
 
     diffuse(m_velocityXScratch, m_velocityX, m_viscosity, BoundaryMode::HorizontalVelocity);
     diffuse(m_velocityYScratch, m_velocityY, m_viscosity, BoundaryMode::VerticalVelocity);
@@ -54,16 +58,70 @@ void FluidField::step() {
     for (float& value : m_density) {
         value = std::clamp(value * m_densityDissipation, 0.0F, kDensityClamp);
     }
+
+    enforceObstacles();
 }
 
 void FluidField::addDensity(int x, int y, float amount) {
-    m_density[static_cast<std::size_t>(index(x, y))] += amount;
+    const auto cell = static_cast<std::size_t>(index(x, y));
+    if (m_obstacles[cell] != 0U) {
+        return;
+    }
+    m_density[cell] += amount;
 }
 
 void FluidField::addVelocity(int x, int y, float amountX, float amountY) {
     const auto cell = static_cast<std::size_t>(index(x, y));
+    if (m_obstacles[cell] != 0U) {
+        return;
+    }
     m_velocityX[cell] += amountX;
     m_velocityY[cell] += amountY;
+}
+
+void FluidField::clearObstacles() {
+    std::fill(m_obstacles.begin(), m_obstacles.end(), 0U);
+}
+
+void FluidField::setObstacleCircle(int centerX, int centerY, float radius) {
+    const float radiusSquared = radius * radius;
+    for (int y = 1; y < m_size - 1; ++y) {
+        for (int x = 1; x < m_size - 1; ++x) {
+            const float dx = static_cast<float>(x - centerX);
+            const float dy = static_cast<float>(y - centerY);
+            if ((dx * dx) + (dy * dy) <= radiusSquared) {
+                m_obstacles[static_cast<std::size_t>(index(x, y))] = 1U;
+            }
+        }
+    }
+    enforceObstacles();
+}
+
+void FluidField::setObstacleAirfoil(int leadingEdgeX, int centerY, float chord, float thickness) {
+    for (int y = 1; y < m_size - 1; ++y) {
+        for (int x = 1; x < m_size - 1; ++x) {
+            const float localX = (static_cast<float>(x) - static_cast<float>(leadingEdgeX)) / chord;
+            if (localX < 0.0F || localX > 1.0F) {
+                continue;
+            }
+
+            const float thicknessDistribution =
+                5.0F * thickness *
+                ((0.2969F * std::sqrt(localX)) -
+                 (0.1260F * localX) -
+                 (0.3516F * localX * localX) +
+                 (0.2843F * localX * localX * localX) -
+                 (0.1036F * localX * localX * localX * localX));
+
+            const float halfThickness = std::max(0.5F, chord * thicknessDistribution);
+            const float dy = std::abs(static_cast<float>(y - centerY));
+            if (dy <= halfThickness) {
+                m_obstacles[static_cast<std::size_t>(index(x, y))] = 1U;
+            }
+        }
+    }
+
+    enforceObstacles();
 }
 
 int FluidField::size() const noexcept {
@@ -74,6 +132,10 @@ float FluidField::densityAt(int x, int y) const {
     return m_density[static_cast<std::size_t>(index(x, y))];
 }
 
+float FluidField::pressureAt(int x, int y) const {
+    return m_pressure[static_cast<std::size_t>(index(x, y))];
+}
+
 float FluidField::velocityXAt(int x, int y) const {
     return m_velocityX[static_cast<std::size_t>(index(x, y))];
 }
@@ -82,20 +144,51 @@ float FluidField::velocityYAt(int x, int y) const {
     return m_velocityY[static_cast<std::size_t>(index(x, y))];
 }
 
+bool FluidField::isObstacleAt(int x, int y) const {
+    return m_obstacles[static_cast<std::size_t>(index(x, y))] != 0U;
+}
+
 int FluidField::index(int x, int y) const {
     const int clampedX = std::clamp(x, 0, m_size - 1);
     const int clampedY = std::clamp(y, 0, m_size - 1);
     return clampedX + (clampedY * m_size);
 }
 
+void FluidField::enforceObstacles() {
+    for (std::size_t i = 0; i < m_obstacles.size(); ++i) {
+        if (m_obstacles[i] == 0U) {
+            continue;
+        }
+
+        m_density[i] = 0.0F;
+        m_densityScratch[i] = 0.0F;
+        m_pressure[i] = 0.0F;
+        m_velocityX[i] = 0.0F;
+        m_velocityY[i] = 0.0F;
+        m_velocityXScratch[i] = 0.0F;
+        m_velocityYScratch[i] = 0.0F;
+    }
+}
+
 void FluidField::applyInflow() {
     for (int y = 1; y < m_size - 1; ++y) {
         const std::size_t inlet = static_cast<std::size_t>(index(1, y));
+        if (m_obstacles[inlet] != 0U) {
+            continue;
+        }
         m_velocityX[inlet] = m_inflowVelocity;
         m_velocityY[inlet] = 0.0F;
 
-        if (y > (m_size / 3) && y < ((2 * m_size) / 3)) {
-            m_density[inlet] = std::max(m_density[inlet], 24.0F);
+        const int centerline = m_size / 2;
+        const int upperTracer = centerline - (m_size / 10);
+        const int lowerTracer = centerline + (m_size / 10);
+        const bool mainStream = std::abs(y - centerline) < (m_size / 5);
+        const bool tracerStream = std::abs(y - upperTracer) <= 1 || std::abs(y - lowerTracer) <= 1;
+        if (mainStream) {
+            m_density[inlet] = std::max(m_density[inlet], 18.0F);
+        }
+        if (tracerStream) {
+            m_density[inlet] = std::max(m_density[inlet], 64.0F);
         }
     }
 
@@ -117,6 +210,10 @@ void FluidField::diffuse(
         for (int y = 1; y < m_size - 1; ++y) {
             for (int x = 1; x < m_size - 1; ++x) {
                 const int cell = index(x, y);
+                if (m_obstacles[static_cast<std::size_t>(cell)] != 0U) {
+                    current[static_cast<std::size_t>(cell)] = 0.0F;
+                    continue;
+                }
                 current[static_cast<std::size_t>(cell)] =
                     (previous[static_cast<std::size_t>(cell)] +
                      a * (current[static_cast<std::size_t>(index(x - 1, y))] +
@@ -140,6 +237,10 @@ void FluidField::advect(
     for (int y = 1; y < m_size - 1; ++y) {
         for (int x = 1; x < m_size - 1; ++x) {
             const int cell = index(x, y);
+            if (m_obstacles[static_cast<std::size_t>(cell)] != 0U) {
+                current[static_cast<std::size_t>(cell)] = 0.0F;
+                continue;
+            }
             const float backtraceX =
                 static_cast<float>(x) - m_dt * static_cast<float>(m_size - 2) * velocityX[static_cast<std::size_t>(cell)];
             const float backtraceY =
@@ -178,6 +279,10 @@ void FluidField::project(std::vector<float>& velocityX, std::vector<float>& velo
     for (int y = 1; y < m_size - 1; ++y) {
         for (int x = 1; x < m_size - 1; ++x) {
             const int cell = index(x, y);
+            if (m_obstacles[static_cast<std::size_t>(cell)] != 0U) {
+                divergence[cell] = 0.0F;
+                continue;
+            }
             divergence[cell] = -0.5F *
                                (velocityX[static_cast<std::size_t>(index(x + 1, y))] -
                                 velocityX[static_cast<std::size_t>(index(x - 1, y))] +
@@ -198,6 +303,11 @@ void FluidField::project(std::vector<float>& velocityX, std::vector<float>& velo
         for (int y = 1; y < m_size - 1; ++y) {
             for (int x = 1; x < m_size - 1; ++x) {
                 const int cell = index(x, y);
+                if (m_obstacles[static_cast<std::size_t>(cell)] != 0U) {
+                    pressure[cell] = 0.0F;
+                    pressureField[static_cast<std::size_t>(cell)] = 0.0F;
+                    continue;
+                }
                 pressure[cell] =
                     (divergenceField[static_cast<std::size_t>(cell)] +
                      pressure[index(x - 1, y)] +
@@ -217,6 +327,11 @@ void FluidField::project(std::vector<float>& velocityX, std::vector<float>& velo
     for (int y = 1; y < m_size - 1; ++y) {
         for (int x = 1; x < m_size - 1; ++x) {
             const int cell = index(x, y);
+            if (m_obstacles[static_cast<std::size_t>(cell)] != 0U) {
+                velocityX[static_cast<std::size_t>(cell)] = 0.0F;
+                velocityY[static_cast<std::size_t>(cell)] = 0.0F;
+                continue;
+            }
             velocityX[static_cast<std::size_t>(cell)] -=
                 0.5F * static_cast<float>(m_size) * (pressure[index(x + 1, y)] - pressure[index(x - 1, y)]);
             velocityY[static_cast<std::size_t>(cell)] -=
@@ -224,8 +339,13 @@ void FluidField::project(std::vector<float>& velocityX, std::vector<float>& velo
         }
     }
 
+    for (int i = 0; i < pressure.size(); ++i) {
+        m_pressure[static_cast<std::size_t>(i)] = pressure[i];
+    }
+
     setBoundary(velocityX, BoundaryMode::HorizontalVelocity);
     setBoundary(velocityY, BoundaryMode::VerticalVelocity);
+    enforceObstacles();
 }
 
 void FluidField::setBoundary(std::vector<float>& field, BoundaryMode mode) const {
@@ -258,4 +378,10 @@ void FluidField::setBoundary(std::vector<float>& field, BoundaryMode mode) const
     field[static_cast<std::size_t>(index(m_size - 1, m_size - 1))] =
         0.5F * (field[static_cast<std::size_t>(index(m_size - 2, m_size - 1))] +
                 field[static_cast<std::size_t>(index(m_size - 1, m_size - 2))]);
+
+    for (std::size_t i = 0; i < m_obstacles.size(); ++i) {
+        if (m_obstacles[i] != 0U) {
+            field[i] = 0.0F;
+        }
+    }
 }

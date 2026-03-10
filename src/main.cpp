@@ -13,12 +13,16 @@ namespace {
 enum class ViewMode {
     Density,
     VelocityMagnitude,
+    Pressure,
 };
 
 sf::Color densityColor(float density) {
-    const float clamped = std::clamp(density, 0.0F, 255.0F);
-    const auto shade = static_cast<std::uint8_t>(clamped);
-    return sf::Color(shade, static_cast<std::uint8_t>(shade / 2U), static_cast<std::uint8_t>(255U - shade));
+    const float clamped = std::clamp(density, 0.0F, 255.0F) / 255.0F;
+    const float shaped = std::sqrt(clamped);
+    const auto red = static_cast<std::uint8_t>(std::clamp(30.0F + (225.0F * shaped), 0.0F, 255.0F));
+    const auto green = static_cast<std::uint8_t>(std::clamp(10.0F + (180.0F * shaped * shaped), 0.0F, 255.0F));
+    const auto blue = static_cast<std::uint8_t>(std::clamp(24.0F + (255.0F * (1.0F - shaped * 0.75F)), 0.0F, 255.0F));
+    return sf::Color(red, green, blue);
 }
 
 sf::Color velocityColor(float vx, float vy) {
@@ -28,7 +32,21 @@ sf::Color velocityColor(float vx, float vy) {
     return sf::Color(20U, intensity, static_cast<std::uint8_t>(255U - intensity / 2U));
 }
 
+sf::Color pressureColor(float pressure) {
+    const float clamped = std::clamp(pressure * 900.0F, -255.0F, 255.0F);
+    if (clamped >= 0.0F) {
+        const auto warm = static_cast<std::uint8_t>(clamped);
+        return sf::Color(255U, static_cast<std::uint8_t>(255U - warm / 2U), static_cast<std::uint8_t>(255U - warm));
+    }
+
+    const auto cool = static_cast<std::uint8_t>(-clamped);
+    return sf::Color(static_cast<std::uint8_t>(255U - cool), static_cast<std::uint8_t>(255U - cool / 3U), 255U);
+}
+
 std::string windowTitle(ViewMode mode) {
+    if (mode == ViewMode::Pressure) {
+        return "2D NS Solver - Pressure [3]";
+    }
     if (mode == ViewMode::VelocityMagnitude) {
         return "2D NS Solver - Velocity Magnitude [2]";
     }
@@ -43,6 +61,12 @@ int main() {
     constexpr float deltaTime = 0.1F;
 
     FluidField field(gridSize, 0.0001F, 0.00001F, deltaTime);
+    field.setObstacleAirfoil(
+        static_cast<int>(gridSize * 0.40F),
+        gridSize / 2,
+        static_cast<float>(gridSize) * 0.26F,
+        0.14F
+    );
     sf::RenderWindow window(sf::VideoMode({windowSize, windowSize}), "2D NS Solver");
     window.setFramerateLimit(60);
 
@@ -74,6 +98,10 @@ int main() {
                     currentView = ViewMode::VelocityMagnitude;
                     window.setTitle(windowTitle(currentView));
                 }
+                if (keyPressed->code == sf::Keyboard::Key::Num3) {
+                    currentView = ViewMode::Pressure;
+                    window.setTitle(windowTitle(currentView));
+                }
             }
         }
 
@@ -93,8 +121,12 @@ int main() {
         for (int y = 0; y < gridSize; ++y) {
             for (int x = 0; x < gridSize; ++x) {
                 sf::Color pixel = sf::Color::Black;
-                if (currentView == ViewMode::VelocityMagnitude) {
+                if (field.isObstacleAt(x, y)) {
+                    pixel = sf::Color(244U, 236U, 210U);
+                } else if (currentView == ViewMode::VelocityMagnitude) {
                     pixel = velocityColor(field.velocityXAt(x, y), field.velocityYAt(x, y));
+                } else if (currentView == ViewMode::Pressure) {
+                    pixel = pressureColor(field.pressureAt(x, y));
                 } else {
                     pixel = densityColor(field.densityAt(x, y));
                 }

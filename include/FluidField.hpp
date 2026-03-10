@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 class FluidField {
@@ -10,11 +11,16 @@ public:
     void step();
     void addDensity(int x, int y, float amount);
     void addVelocity(int x, int y, float amountX, float amountY);
+    void clearObstacles();
+    void setObstacleCircle(int centerX, int centerY, float radius);
+    void setObstacleAirfoil(int leadingEdgeX, int centerY, float chord, float thickness);
 
     [[nodiscard]] int size() const noexcept;
     [[nodiscard]] float densityAt(int x, int y) const;
+    [[nodiscard]] float pressureAt(int x, int y) const;
     [[nodiscard]] float velocityXAt(int x, int y) const;
     [[nodiscard]] float velocityYAt(int x, int y) const;
+    [[nodiscard]] bool isObstacleAt(int x, int y) const;
 
 private:
     enum class BoundaryMode {
@@ -24,6 +30,7 @@ private:
     };
 
     [[nodiscard]] int index(int x, int y) const;
+    void enforceObstacles();
     void applyInflow();
     void diffuse(std::vector<float>& current, const std::vector<float>& previous, float rate, BoundaryMode mode);
     void advect(
@@ -45,9 +52,11 @@ private:
 
     std::vector<float> m_density;
     std::vector<float> m_densityScratch;
+    std::vector<float> m_pressure;
 
     std::vector<float> m_velocityX;
     std::vector<float> m_velocityY;
     std::vector<float> m_velocityXScratch;
     std::vector<float> m_velocityYScratch;
+    std::vector<std::uint8_t> m_obstacles;
 };
