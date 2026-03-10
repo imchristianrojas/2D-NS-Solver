@@ -97,10 +97,20 @@ void FluidField::setObstacleCircle(int centerX, int centerY, float radius) {
     enforceObstacles();
 }
 
-void FluidField::setObstacleAirfoil(int leadingEdgeX, int centerY, float chord, float thickness) {
+void FluidField::setObstacleAirfoil(int centerX, int centerY, float chord, float thickness, float angleDegrees) {
+    const float angleRadians = angleDegrees * static_cast<float>(M_PI) / 180.0F;
+    const float cosine = std::cos(angleRadians);
+    const float sine = std::sin(angleRadians);
+    const float leadingEdgeX = static_cast<float>(centerX) - (0.5F * chord);
+
     for (int y = 1; y < m_size - 1; ++y) {
         for (int x = 1; x < m_size - 1; ++x) {
-            const float localX = (static_cast<float>(x) - static_cast<float>(leadingEdgeX)) / chord;
+            const float dx = static_cast<float>(x - centerX);
+            const float dy = static_cast<float>(y - centerY);
+
+            const float rotatedX = (dx * cosine) + (dy * sine) + (0.5F * chord);
+            const float rotatedY = (-dx * sine) + (dy * cosine);
+            const float localX = (rotatedX + leadingEdgeX - leadingEdgeX) / chord;
             if (localX < 0.0F || localX > 1.0F) {
                 continue;
             }
@@ -114,8 +124,7 @@ void FluidField::setObstacleAirfoil(int leadingEdgeX, int centerY, float chord, 
                  (0.1036F * localX * localX * localX * localX));
 
             const float halfThickness = std::max(0.5F, chord * thicknessDistribution);
-            const float dy = std::abs(static_cast<float>(y - centerY));
-            if (dy <= halfThickness) {
+            if (std::abs(rotatedY) <= halfThickness) {
                 m_obstacles[static_cast<std::size_t>(index(x, y))] = 1U;
             }
         }

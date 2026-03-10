@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -45,12 +46,56 @@ sf::Color pressureColor(float pressure) {
 
 std::string windowTitle(ViewMode mode) {
     if (mode == ViewMode::Pressure) {
-        return "2D NS Solver - Pressure [3]";
+        return "2D NS Solver - Pressure [3], Airfoil Angle [[] / ]";
     }
     if (mode == ViewMode::VelocityMagnitude) {
-        return "2D NS Solver - Velocity Magnitude [2]";
+        return "2D NS Solver - Velocity Magnitude [2], Airfoil Angle [[] / ]";
     }
-    return "2D NS Solver - Density [1]";
+    return "2D NS Solver - Density [1], Airfoil Angle [[] / ]";
+}
+
+void rebuildAirfoil(FluidField& field, int gridSize, float angleDegrees) {
+    field.clearObstacles();
+    field.setObstacleAirfoil(
+        static_cast<int>(gridSize * 0.53F),
+        gridSize / 2,
+        static_cast<float>(gridSize) * 0.26F,
+        0.14F,
+        angleDegrees
+    );
+}
+
+sf::VertexArray buildVelocityGlyphs(const FluidField& field, float scale) {
+    constexpr int sampleStride = 6;
+    constexpr float glyphScale = 10.0F;
+    sf::VertexArray glyphs(sf::PrimitiveType::Lines);
+
+    for (int y = 2; y < field.size() - 2; y += sampleStride) {
+        for (int x = 2; x < field.size() - 2; x += sampleStride) {
+            if (field.isObstacleAt(x, y)) {
+                continue;
+            }
+
+            const float vx = field.velocityXAt(x, y);
+            const float vy = field.velocityYAt(x, y);
+            const float speed = std::sqrt((vx * vx) + (vy * vy));
+            if (speed < 0.05F) {
+                continue;
+            }
+
+            const sf::Vector2f origin((static_cast<float>(x) + 0.5F) * scale, (static_cast<float>(y) + 0.5F) * scale);
+            const sf::Vector2f tip(
+                origin.x + (vx * glyphScale * scale),
+                origin.y + (vy * glyphScale * scale)
+            );
+            const auto alpha = static_cast<std::uint8_t>(std::clamp(speed * 120.0F, 40.0F, 180.0F));
+            const sf::Color color(248U, 248U, 248U, alpha);
+            glyphs.append(sf::Vertex(origin, color));
+            glyphs.append(sf::Vertex(tip, color));
+        }
+    }
+
+    return glyphs;
 }
 
 }
@@ -61,12 +106,8 @@ int main() {
     constexpr float deltaTime = 0.1F;
 
     FluidField field(gridSize, 0.0001F, 0.00001F, deltaTime);
-    field.setObstacleAirfoil(
-        static_cast<int>(gridSize * 0.40F),
-        gridSize / 2,
-        static_cast<float>(gridSize) * 0.26F,
-        0.14F
-    );
+    float airfoilAngleDegrees = 6.0F;
+    rebuildAirfoil(field, gridSize, airfoilAngleDegrees);
     sf::RenderWindow window(sf::VideoMode({windowSize, windowSize}), "2D NS Solver");
     window.setFramerateLimit(60);
 
@@ -102,6 +143,14 @@ int main() {
                     currentView = ViewMode::Pressure;
                     window.setTitle(windowTitle(currentView));
                 }
+                if (keyPressed->code == sf::Keyboard::Key::LBracket) {
+                    airfoilAngleDegrees = std::clamp(airfoilAngleDegrees - 2.0F, -20.0F, 20.0F);
+                    rebuildAirfoil(field, gridSize, airfoilAngleDegrees);
+                }
+                if (keyPressed->code == sf::Keyboard::Key::RBracket) {
+                    airfoilAngleDegrees = std::clamp(airfoilAngleDegrees + 2.0F, -20.0F, 20.0F);
+                    rebuildAirfoil(field, gridSize, airfoilAngleDegrees);
+                }
             }
         }
 
@@ -135,9 +184,13 @@ int main() {
         }
 
         densityTexture.update(densityImage);
+        sf::VertexArray velocityGlyphs = buildVelocityGlyphs(field, scale);
 
         window.clear(sf::Color(10, 12, 18));
         window.draw(densitySprite);
+        if (currentView != ViewMode::VelocityMagnitude) {
+            window.draw(velocityGlyphs);
+        }
         window.display();
     }
 

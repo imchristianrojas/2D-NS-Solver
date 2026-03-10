@@ -10,6 +10,7 @@ Early scaffold for a 2D incompressible Navier-Stokes solver focused on Formula 1
 - Mouse injection to seed density and upward velocity into the domain
 - Basic left-boundary inflow to mimic a wind tunnel feed
 - Built-in airfoil-like obstacle mask and tracer bands to make the wake easier to read
+- Sparse velocity glyph overlay and runtime angle-of-attack adjustment with `[` and `]`
 
 ## Dependencies
 
@@ -26,7 +27,7 @@ cmake --build build
 ./build/ns_solver_app
 ```
 
-Press `1` for density view, `2` for velocity magnitude, and `3` for pressure.
+Press `1` for density view, `2` for velocity magnitude, and `3` for pressure. Use `[` and `]` to decrease or increase airfoil angle.
 
 ## Next steps
 

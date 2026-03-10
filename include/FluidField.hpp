@@ -13,7 +13,7 @@ public:
     void addVelocity(int x, int y, float amountX, float amountY);
     void clearObstacles();
     void setObstacleCircle(int centerX, int centerY, float radius);
-    void setObstacleAirfoil(int leadingEdgeX, int centerY, float chord, float thickness);
+    void setObstacleAirfoil(int centerX, int centerY, float chord, float thickness, float angleDegrees = 0.0F);
 
     [[nodiscard]] int size() const noexcept;
     [[nodiscard]] float densityAt(int x, int y) const;
