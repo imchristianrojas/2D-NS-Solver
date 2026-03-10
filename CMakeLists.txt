@@ -7,6 +7,8 @@ project(
     LANGUAGES CXX
 )
 
+enable_testing()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -57,3 +59,14 @@ target_link_libraries(ns_solver_app
         SFML::Window
         SFML::System
 )
+
+add_executable(ns_solver_tests
+    tests/FluidFieldTests.cpp
+)
+
+target_link_libraries(ns_solver_tests
+    PRIVATE
+        ns_solver_core
+)
+
+add_test(NAME fluid_field_tests COMMAND ns_solver_tests)

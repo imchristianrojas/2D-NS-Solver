@@ -24,6 +24,7 @@ Early scaffold for a 2D incompressible Navier-Stokes solver focused on Formula 1
 ```bash
 cmake -S . -B build
 cmake --build build
+ctest --test-dir build --output-on-failure
 ./build/ns_solver_app
 ```
 
