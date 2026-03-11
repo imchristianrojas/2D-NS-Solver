@@ -1,4 +1,4 @@
-!Disclaimer Vibe Coded Project
+## Disclaimer: Vibe Coded Project Shoutout Codex
 # 2D NS Solver
 
 Early scaffold for a 2D incompressible Navier-Stokes solver focused on Formula 1 style airflow visualization.
