@@ -2,6 +2,10 @@
 
 Early scaffold for a 2D incompressible Navier-Stokes solver focused on Formula 1 style airflow visualization.
 
+## Demo
+
+![2D NS Solver demo](assets/demo-NS.gif)
+
 ## Current scope
 
 - CMake-based C++20 project layout
